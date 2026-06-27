@@ -14,7 +14,7 @@ Thank you for your interest in contributing. This project welcomes contributions
 ### Local Development
 
 ```bash
-git clone https://github.com/stefanvangastel/cilium-egress-operator
+git clone https://github.com/stefanlievers/cilium-egress-operator
 cd cilium-egress-operator
 
 # Install CRDs into your cluster

@@ -1,0 +1,19 @@
+# Binaries
+bin/
+*.exe
+
+# Go
+vendor/
+*.test
+*.out
+
+# Kubebuilder
+testbin/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store

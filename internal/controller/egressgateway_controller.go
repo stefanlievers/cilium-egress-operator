@@ -17,9 +17,11 @@ package controller
 import (
 	"context"
 	"sort"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -60,29 +62,38 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		"egressIP", eg.Spec.EgressIP,
 	)
 
-	if err := r.reconcileEgressNode(ctx, eg); err != nil {
+	// Reconcile node selectie en haal de geselecteerde node terug
+	egressNode, err := r.reconcileEgressNode(ctx, eg)
+	if err != nil {
 		log.Error(err, "Fout bij reconcilen egress node")
+		return ctrl.Result{}, err
+	}
+
+	// Status terugschrijven
+	if err := r.updateStatus(ctx, eg, egressNode); err != nil {
+		log.Error(err, "Fout bij updaten status")
 		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
 }
 
-func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *egressv1alpha1.EgressGateway) error {
+// reconcileEgressNode zorgt dat exact één node het label egress-node: "true" heeft.
+// Geeft de naam van de geselecteerde node terug.
+func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *egressv1alpha1.EgressGateway) (string, error) {
 	log := logf.FromContext(ctx)
 
 	egressNodes := &corev1.NodeList{}
 	if err := r.List(ctx, egressNodes, client.MatchingLabels{
 		"egress-node": "true",
 	}); err != nil {
-		return err
+		return "", err
 	}
 
 	if len(egressNodes.Items) > 0 {
-		log.Info("Egress node gevonden, niets te doen",
-			"node", egressNodes.Items[0].Name,
-		)
-		return nil
+		nodeName := egressNodes.Items[0].Name
+		log.Info("Egress node gevonden, niets te doen", "node", nodeName)
+		return nodeName, nil
 	}
 
 	log.Info("Geen egress node gevonden, control plane nodes zoeken")
@@ -91,12 +102,12 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *e
 	if err := r.List(ctx, controlPlaneNodes, client.MatchingLabels{
 		"node-role.kubernetes.io/control-plane": "",
 	}); err != nil {
-		return err
+		return "", err
 	}
 
 	if len(controlPlaneNodes.Items) == 0 {
 		log.Info("Geen control plane nodes gevonden, wachten")
-		return nil
+		return "", nil
 	}
 
 	sort.Slice(controlPlaneNodes.Items, func(i, j int) bool {
@@ -109,15 +120,25 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *e
 	patch := client.MergeFrom(target.DeepCopy())
 	target.Labels["egress-node"] = "true"
 	if err := r.Patch(ctx, target, patch); err != nil {
-		return err
+		return "", err
 	}
 
 	log.Info("Egress node succesvol gelabeld", "node", target.Name)
-	return nil
+	return target.Name, nil
+}
+
+// updateStatus schrijft de huidige staat terug naar de EgressGateway status.
+func (r *EgressGatewayReconciler) updateStatus(ctx context.Context, eg *egressv1alpha1.EgressGateway, egressNode string) error {
+	patch := client.MergeFrom(eg.DeepCopy())
+
+	now := metav1.NewTime(time.Now())
+	eg.Status.EgressNode = egressNode
+	eg.Status.LastReconciled = &now
+
+	return r.Status().Patch(ctx, eg, patch)
 }
 
 // nodeToEgressGateway mapt een Node event naar alle EgressGateway reconcile requests.
-// Elke node wijziging triggert een reconcile van alle EgressGateway CR's.
 func (r *EgressGatewayReconciler) nodeToEgressGateway(ctx context.Context, obj client.Object) []reconcile.Request {
 	egressList := &egressv1alpha1.EgressGatewayList{}
 	if err := r.List(ctx, egressList); err != nil {
@@ -140,7 +161,6 @@ func (r *EgressGatewayReconciler) nodeToEgressGateway(ctx context.Context, obj c
 func (r *EgressGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&egressv1alpha1.EgressGateway{}).
-		// Watch Node events en trigger reconcile van alle EgressGateway CR's
 		Watches(
 			&corev1.Node{},
 			handler.EnqueueRequestsFromMapFunc(r.nodeToEgressGateway),

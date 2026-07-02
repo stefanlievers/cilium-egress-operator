@@ -1,0 +1,42 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - egress.cilium-egress-operator.io
+  resources:
+  - egressgateways
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - egress.cilium-egress-operator.io
+  resources:
+  - egressgateways/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - egress.cilium-egress-operator.io
+  resources:
+  - egressgateways/status
+  verbs:
+  - get
+  - patch
+  - update

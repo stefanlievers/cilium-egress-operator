@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+- egress_v1alpha1_egressgateway.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

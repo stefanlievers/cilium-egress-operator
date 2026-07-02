@@ -1,16 +1,9 @@
 apiVersion: egress.cilium-egress-operator.io/v1alpha1
 kind: EgressGateway
 metadata:
-  name: crown-jewels
-  namespace: default
+  labels:
+    app.kubernetes.io/name: cilium-egress-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: egressgateway-sample
 spec:
-  egressIP: "10.255.26.10"
-  interface: "egress0"
-  podSelector:
-    matchLabels:
-      egress-pool: crown-jewels
-  namespaceSelector:
-    matchLabels:
-      egress-pool: crown-jewels
-  destinations:
-    - cidr: "10.20.30.0/24"
+  # TODO(user): Add fields here

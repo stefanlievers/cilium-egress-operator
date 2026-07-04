@@ -26,13 +26,13 @@ None of this survives node replacement, OS reboots, or cluster rebuilds without 
 apiVersion: egress.cilium-egress-operator.io/v1alpha1
 kind: EgressGateway
 metadata:
-  name: crown-jewels
+  name: egress-external
 spec:
   egressIP: "10.255.26.10"
   interface: "eth0"
   podSelector:
     matchLabels:
-      egress-pool: crown-jewels
+      egress-pool: external
   destinations:
     - cidr: "10.20.30.0/24"
       nextHop: "10.255.26.1"   # optional; defaults to the node's default gateway
@@ -151,8 +151,8 @@ Check status:
 
 ```bash
 $ kubectl get egressgateway
-NAME           EGRESSIP       NODE         IPCONFIRMED   POLICYREADY   AGE
-crown-jewels   10.255.26.10   rke2-cp-01   true                        2m
+NAME              EGRESSIP       NODE         IPCONFIRMED   POLICYREADY   AGE
+egress-external   10.255.26.10   rke2-cp-01   true                        2m
 ```
 
 ### Spec reference

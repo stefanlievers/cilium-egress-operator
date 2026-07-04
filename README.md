@@ -132,6 +132,22 @@ See [docs/compatibility.md](docs/compatibility.md) for the full version matrix a
 
 ## Installation
 
+### From a release (recommended)
+
+Every [release](https://github.com/stefanlievers/cilium-egress-operator/releases) ships a consolidated `install.yaml` (CRD, RBAC, and controller Deployment) with a pinned image from GHCR:
+
+```bash
+kubectl apply -f https://github.com/stefanlievers/cilium-egress-operator/releases/latest/download/install.yaml
+```
+
+Or pin a specific version:
+
+```bash
+kubectl apply -f https://github.com/stefanlievers/cilium-egress-operator/releases/download/v0.1.0/install.yaml
+```
+
+Releases follow [Semantic Versioning](https://semver.org) (`major.minor.patch`); see [docs/compatibility.md](docs/compatibility.md) for which platform versions each release line supports.
+
 ### Development / evaluation
 
 ```bash
@@ -145,9 +161,7 @@ make install
 make run
 ```
 
-### In-cluster deployment
-
-In-cluster deployment manifests and a Helm chart are on the [roadmap](#roadmap) for v0.1.0. Until then, the operator can be run with any standard controller Deployment using the RBAC role in [`config/rbac/`](config/rbac/) and the CRD from [`config/crd/bases/`](config/crd/bases/).
+A Helm chart is on the [roadmap](#roadmap).
 
 ## Usage
 
@@ -216,8 +230,8 @@ Deeper rationale lives in the [Architecture Decision Records](docs/adr/).
 
 ## Roadmap
 
-- [ ] **v0.1.0** — Core reconciliation (node labeling, IP pinning, routes, status), deployment manifests, Helm chart
-- [ ] **v0.2.0** — Status `conditions` (KEP-1623 compliant), optional `CiliumEgressGatewayPolicy` generation, egress node de-labeling / conflict resolution
+- [x] **v0.1.0** — Core reconciliation (node labeling, IP pinning, routes, status), deployment manifests, GHCR image + `install.yaml` releases
+- [ ] **v0.2.0** — Helm chart, status `conditions` (KEP-1623 compliant), optional `CiliumEgressGatewayPolicy` generation, egress node de-labeling / conflict resolution
 - [ ] **v0.3.0** — Multiple independent egress nodes (per-gateway node labels), IPv6 support
 - [ ] **v0.4.0** — Prometheus metrics and alerting rules
 - [ ] **v1.0.0** — Production-ready, stable `v1` API

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.1.0] - 2026-07-04
+
+First release. Installable via the `install.yaml` attached to the
+[release page](https://github.com/stefanlievers/cilium-egress-operator/releases/tag/v0.1.0);
+the controller image is published as
+`ghcr.io/stefanlievers/cilium-egress-operator:v0.1.0` (linux/amd64).
+
 ### Added
 - Initial `EgressGateway` CRD (v1alpha1) with `egressIP`, `interface`, `podSelector`,
   `namespaceSelector`, and `destinations`
@@ -18,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pinnerImage` spec field to override the pinner container image (air-gapped support)
 - `nodeRole` spec field (`control-plane` | `worker`) to choose which kind of node gets
   the egress label; workloads on the egress node itself do not use the egress IP
+- Deployment manifests (`config/manager/`), Dockerfile, and a tag-triggered release
+  workflow publishing the image to GHCR and `install.yaml` to the GitHub release
 - Status writeback: `egressNode`, `egressIPConfirmed` (backed by a readiness probe on the
   pinner), and `lastReconciled`
 - Architecture Decision Records (MADR) in `docs/adr/`, compatibility matrix in
@@ -39,3 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - Upgraded `golang.org/x/net` to v0.56.0 (GO-2026-5026, GO-2026-4918)
+
+[Unreleased]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/stefanlievers/cilium-egress-operator/releases/tag/v0.1.0

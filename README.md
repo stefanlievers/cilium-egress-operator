@@ -1,5 +1,11 @@
 # cilium-egress-operator
 
+[![Tests](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/test.yml/badge.svg)](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/test.yml)
+[![Lint](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/lint.yml/badge.svg)](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/lint.yml)
+[![Go Version](https://img.shields.io/badge/go-1.26-00ADD8?logo=go)](go.mod)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![API](https://img.shields.io/badge/API-v1alpha1-orange)](api/v1alpha1/egressgateway_types.go)
+
 > [!WARNING]
 > This project is 'vibe' coded.
 > I'm a Kubernetes engineer missing the features this project provides.
@@ -7,12 +13,6 @@
 > Please proceed carefully if you find this project and want to use it.
 > Kind regards, Stefan
 > 2026-07-04
-
-[![Tests](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/test.yml/badge.svg)](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/test.yml)
-[![Lint](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/lint.yml/badge.svg)](https://github.com/stefanlievers/cilium-egress-operator/actions/workflows/lint.yml)
-[![Go Version](https://img.shields.io/badge/go-1.26-00ADD8?logo=go)](go.mod)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
-[![API](https://img.shields.io/badge/API-v1alpha1-orange)](api/v1alpha1/egressgateway_types.go)
 
 A Kubernetes operator that automates everything open-source Cilium leaves **manual** around egress gateways — node labeling, egress IP assignment, and routing — purpose-built for on-premises environments with BGP fabric (native routing mode).
 

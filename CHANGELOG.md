@@ -8,10 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial `EgressGateway` CRD (v1alpha1)
-- Controller: deterministic control-plane node labeling
-- Controller: `CiliumEgressGatewayPolicy` lifecycle management
-- Controller: `DaemonSet` IP pinner lifecycle management
-- Node watcher: event-driven egress node recovery
-- Helm chart for installation
-- Status conditions on `EgressGateway` CR
+- Initial `EgressGateway` CRD (v1alpha1) with `egressIP`, `interface`, `podSelector`,
+  `namespaceSelector`, and `destinations`
+- Controller: deterministic control-plane node labeling (`egress-node: "true"`),
+  recovered event-driven via a Node watcher
+- Controller: IP pinner DaemonSet lifecycle management with owner references
+- Route management: opt-in `createRoutes` with per-destination optional `nextHop`,
+  falling back to the node's default gateway
+- `pinnerImage` spec field to override the pinner container image (air-gapped support)
+- Status writeback: `egressNode`, `egressIPConfirmed` (backed by a readiness probe on the
+  pinner), and `lastReconciled`
+- Architecture Decision Records (MADR) in `docs/adr/`, compatibility matrix in
+  `docs/compatibility.md`, `SECURITY.md`, and `CODE_OF_CONDUCT.md`
+
+### Changed
+- Pinner container hardened: dropped `privileged` in favor of `CAP_NET_ADMIN` only, all
+  other capabilities dropped, `allowPrivilegeEscalation: false`, resource requests/limits
+- Pinner monitoring made resilient: event-driven `ip monitor` when iproute2 is available,
+  periodic fallback on BusyBox-only images
+- All code comments and log messages translated to English
+
+### Fixed
+- Egress IP presence check no longer substring-matches other addresses
+  (e.g. `10.0.0.1` matching `10.0.0.10`)
+- `spec.interface` is now validated as a Linux interface name, closing a shell-injection
+  vector in the pinner script
+- Node label patching no longer panics on nodes without labels
+
+### Security
+- Upgraded `golang.org/x/net` to v0.56.0 (GO-2026-5026, GO-2026-4918)

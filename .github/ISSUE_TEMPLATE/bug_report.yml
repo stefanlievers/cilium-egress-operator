@@ -1,0 +1,57 @@
+name: Bug report
+description: Something doesn't work as documented
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+        **Security vulnerabilities:** please do NOT report them here — see [SECURITY.md](../../SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Apply this EgressGateway spec: ...
+        2. Drain the egress node
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `kubectl version --short` and `cilium version`, plus the operator version/commit.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: spec
+    attributes:
+      label: EgressGateway resource
+      description: "`kubectl get egressgateway <name> -o yaml` (redact sensitive IPs if needed)"
+      render: yaml
+  - type: textarea
+    id: logs
+    attributes:
+      label: Operator and pinner logs
+      description: Controller logs and, if IP/route related, `kubectl logs ds/egress-ip-pinner-<name>`.
+      render: shell
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - RKE2
+        - kubeadm
+        - kind / k3s (dev)
+        - Other (mention in description)
+    validations:
+      required: true

@@ -39,14 +39,14 @@ import (
 )
 
 const (
-	// labelEgressNode markeert de node die als egress gateway fungeert
+	// labelEgressNode marks the node acting as the egress gateway
 	labelEgressNode = "egress-node"
-	// labelControlPlane is het standaard Kubernetes control plane label
+	// labelControlPlane is the standard Kubernetes control plane label
 	labelControlPlane = "node-role.kubernetes.io/control-plane"
 	labelValueTrue    = "true"
 )
 
-// pinnerLabels zijn de selector labels van de pinner DaemonSet voor een gateway
+// pinnerLabels are the selector labels of the pinner DaemonSet for a gateway
 func pinnerLabels(eg *egressv1alpha1.EgressGateway) map[string]string {
 	return map[string]string{
 		"app":            "egress-ip-pinner",
@@ -72,10 +72,10 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	eg := &egressv1alpha1.EgressGateway{}
 	if err := r.Get(ctx, req.NamespacedName, eg); err != nil {
 		if errors.IsNotFound(err) {
-			log.Info("EgressGateway niet gevonden, waarschijnlijk verwijderd")
+			log.Info("EgressGateway not found, probably deleted")
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "Fout bij ophalen EgressGateway")
+		log.Error(err, "Failed to fetch EgressGateway")
 		return ctrl.Result{}, err
 	}
 
@@ -84,23 +84,23 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		"egressIP", eg.Spec.EgressIP,
 	)
 
-	// Stap 1: zorg dat er een egress node is
+	// Step 1: make sure there is an egress node
 	egressNode, err := r.reconcileEgressNode(ctx)
 	if err != nil {
-		log.Error(err, "Fout bij reconcilen egress node")
+		log.Error(err, "Failed to reconcile egress node")
 		return ctrl.Result{}, err
 	}
 
-	// Stap 2: zorg dat de IP pinner DaemonSet bestaat
+	// Step 2: make sure the IP pinner DaemonSet exists
 	ds, err := r.reconcileDaemonSet(ctx, eg)
 	if err != nil {
-		log.Error(err, "Fout bij reconcilen DaemonSet")
+		log.Error(err, "Failed to reconcile DaemonSet")
 		return ctrl.Result{}, err
 	}
 
-	// Stap 3: status terugschrijven
+	// Step 3: write back status
 	if err := r.updateStatus(ctx, eg, egressNode, ds); err != nil {
-		log.Error(err, "Fout bij updaten status")
+		log.Error(err, "Failed to update status")
 		return ctrl.Result{}, err
 	}
 
@@ -119,11 +119,11 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (stri
 
 	if len(egressNodes.Items) > 0 {
 		nodeName := egressNodes.Items[0].Name
-		log.Info("Egress node gevonden, niets te doen", "node", nodeName)
+		log.Info("Egress node found, nothing to do", "node", nodeName)
 		return nodeName, nil
 	}
 
-	log.Info("Geen egress node gevonden, control plane nodes zoeken")
+	log.Info("No egress node found, looking for control plane nodes")
 
 	controlPlaneNodes := &corev1.NodeList{}
 	if err := r.List(ctx, controlPlaneNodes, client.MatchingLabels{
@@ -133,7 +133,7 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (stri
 	}
 
 	if len(controlPlaneNodes.Items) == 0 {
-		log.Info("Geen control plane nodes gevonden, wachten")
+		log.Info("No control plane nodes found, waiting")
 		return "", nil
 	}
 
@@ -142,7 +142,7 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (stri
 	})
 
 	target := &controlPlaneNodes.Items[0]
-	log.Info("Labelen van egress node", "node", target.Name)
+	log.Info("Labeling egress node", "node", target.Name)
 
 	patch := client.MergeFrom(target.DeepCopy())
 	if target.Labels == nil {
@@ -153,12 +153,12 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (stri
 		return "", err
 	}
 
-	log.Info("Egress node succesvol gelabeld", "node", target.Name)
+	log.Info("Egress node labeled successfully", "node", target.Name)
 	return target.Name, nil
 }
 
-// reconcileDaemonSet zorgt dat de IP pinner DaemonSet bestaat en up-to-date is.
-// De teruggegeven DaemonSet bevat de actuele status (voor egressIPConfirmed).
+// reconcileDaemonSet ensures the IP pinner DaemonSet exists and is up to date.
+// The returned DaemonSet carries the current status (for egressIPConfirmed).
 func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *egressv1alpha1.EgressGateway) (*appsv1.DaemonSet, error) {
 	log := logf.FromContext(ctx)
 
@@ -176,22 +176,22 @@ func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *eg
 	}, existing)
 
 	if errors.IsNotFound(err) {
-		log.Info("DaemonSet aanmaken", "daemonset", dsName)
+		log.Info("Creating DaemonSet", "daemonset", dsName)
 		return desired, r.Create(ctx, desired)
 	}
 	if err != nil {
 		return nil, err
 	}
 
-	log.Info("DaemonSet updaten", "daemonset", dsName)
+	log.Info("Updating DaemonSet", "daemonset", dsName)
 	patch := client.MergeFrom(existing.DeepCopy())
 	existing.Spec = desired.Spec
 	return existing, r.Patch(ctx, existing, patch)
 }
 
-// buildPinnerScript bouwt het shell script voor de IP pinner container.
-// Alle geïnterpoleerde waarden zijn door CRD validatiepatronen beperkt tot
-// veilige tekens (IP's, CIDR's, interface namen) — geen shell injectie mogelijk.
+// buildPinnerScript builds the shell script for the IP pinner container.
+// All interpolated values are restricted by CRD validation patterns to
+// safe characters (IPs, CIDRs, interface names) — no shell injection possible.
 func buildPinnerScript(eg *egressv1alpha1.EgressGateway, iface string) string {
 	var routeLines strings.Builder
 	if eg.Spec.CreateRoutes {
@@ -205,13 +205,13 @@ set -eu
 IFACE=%q
 IP=%q
 
-# Probeer iproute2 te installeren voor event-driven bewaking via ip monitor.
-# Faalt stil in air-gapped omgevingen; dan periodieke controle als terugval.
+# Try to install iproute2 for event-driven monitoring via ip monitor.
+# Fails silently in air-gapped environments; periodic checks are the fallback.
 command -v apk >/dev/null 2>&1 && apk add --no-cache iproute2 >/dev/null 2>&1 || true
 
 ensure_ip() {
   ip addr show dev "$IFACE" | grep -q "inet $IP/32" || {
-    echo "Egress IP $IP toevoegen aan $IFACE"
+    echo "Adding egress IP $IP to $IFACE"
     ip addr add "$IP/32" dev "$IFACE" || true
   }
 }
@@ -219,16 +219,16 @@ ensure_ip() {
 ensure_route() {
   CIDR=$1
   VIA=$2
-  # Geen expliciete next-hop: de huidige default gateway van de node volgen
+  # No explicit next-hop: follow the node's current default gateway
   if [ -z "$VIA" ]; then
     VIA=$(ip route show default 2>/dev/null | sed -n 's/.* via \([0-9.]*\).*/\1/p' | head -n 1)
   fi
   if [ -z "$VIA" ]; then
-    echo "Geen next-hop bekend voor $CIDR (geen default gateway gevonden), route overgeslagen"
+    echo "No next-hop known for $CIDR (no default gateway found), skipping route"
     return 0
   fi
   ip route show | grep -q "^$CIDR via $VIA dev $IFACE" || {
-    echo "Route $CIDR via $VIA instellen op $IFACE"
+    echo "Setting route $CIDR via $VIA on $IFACE"
     ip route del "$CIDR" 2>/dev/null || true
     ip route add "$CIDR" via "$VIA" dev "$IFACE" src "$IP" || true
   }
@@ -239,22 +239,22 @@ apply() {
 %s}
 
 apply
-echo "Egress IP $IP actief op $IFACE"
+echo "Egress IP $IP active on $IFACE"
 
-# Bewaken: event-driven met ip monitor (iproute2), anders periodiek (busybox)
+# Monitoring: event-driven via ip monitor (iproute2), otherwise periodic (busybox)
 if ip -V 2>/dev/null | grep -qi iproute2; then
-  echo "Bewaken via ip monitor"
+  echo "Monitoring via ip monitor"
   ip monitor address route | while read -r _; do apply; done
 else
-  echo "ip monitor niet beschikbaar, terugvallen op periodieke controle"
+  echo "ip monitor not available, falling back to periodic checks"
   while true; do sleep 60; apply; done
 fi
 `, iface, eg.Spec.EgressIP, routeLines.String())
 }
 
-// buildDaemonSet bouwt de gewenste DaemonSet spec voor de IP pinner.
-// Het egress IP komt als extra IP op de interface — geen dummy interface.
-// Bij OS reboot herstelt de DaemonSet het IP (en routes) automatisch.
+// buildDaemonSet builds the desired DaemonSet spec for the IP pinner.
+// The egress IP is added as an extra IP on the interface — no dummy interface.
+// After an OS reboot the DaemonSet restores the IP (and routes) automatically.
 func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGateway, name string) *appsv1.DaemonSet {
 	iface := eg.Spec.Interface
 	if iface == "" {
@@ -285,11 +285,11 @@ func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGatewa
 					Labels: pinnerLabels(eg),
 				},
 				Spec: corev1.PodSpec{
-					// Alleen op de egress node draaien
+					// Only run on the egress node
 					NodeSelector: map[string]string{
 						labelEgressNode: labelValueTrue,
 					},
-					// hostNetwork zodat we de echte host interfaces zien
+					// hostNetwork so we see the real host interfaces
 					HostNetwork: true,
 					Containers: []corev1.Container{
 						{
@@ -300,7 +300,7 @@ func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGatewa
 								"-c",
 								pinnerScript,
 							},
-							// Geen privileged: NET_ADMIN volstaat voor ip addr/route
+							// No privileged: NET_ADMIN suffices for ip addr/route
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: ptr.To(false),
 								Capabilities: &corev1.Capabilities{
@@ -308,8 +308,8 @@ func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGatewa
 									Add:  []corev1.Capability{"NET_ADMIN"},
 								},
 							},
-							// Ready zodra het egress IP daadwerkelijk op de interface staat;
-							// de controller leest dit terug als status.egressIPConfirmed
+							// Ready once the egress IP is actually on the interface;
+							// the controller reads this back as status.egressIPConfirmed
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
@@ -334,7 +334,7 @@ func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGatewa
 							},
 						},
 					},
-					// Toleration zodat de DaemonSet ook op control-plane nodes draait
+					// Toleration so the DaemonSet also runs on control-plane nodes
 					Tolerations: []corev1.Toleration{
 						{
 							Key:      "node-role.kubernetes.io/control-plane",
@@ -354,7 +354,7 @@ func (r *EgressGatewayReconciler) updateStatus(ctx context.Context, eg *egressv1
 	now := metav1.NewTime(time.Now())
 	eg.Status.EgressNode = egressNode
 	eg.Status.LastReconciled = &now
-	// De pinner pod is pas Ready als het IP op de interface staat (readiness probe)
+	// The pinner pod only becomes Ready once the IP is on the interface (readiness probe)
 	eg.Status.EgressIPConfirmed = ds != nil && ds.Status.NumberReady > 0
 
 	return r.Status().Patch(ctx, eg, patch)

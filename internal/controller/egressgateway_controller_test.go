@@ -154,7 +154,7 @@ var _ = Describe("EgressGateway Controller", func() {
 			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
 			Expect(resource.Status.EgressNode).To(Equal(nodeName))
 			Expect(resource.Status.LastReconciled).NotTo(BeNil())
-			// Geen kubelet in envtest, dus de pinner pod wordt nooit Ready
+			// No kubelet in envtest, so the pinner pod never becomes Ready
 			Expect(resource.Status.EgressIPConfirmed).To(BeFalse())
 		})
 

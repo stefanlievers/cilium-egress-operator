@@ -27,6 +27,9 @@ type EgressGatewaySpec struct {
 	EgressIP string `json:"egressIP"`
 
 	// interface is the network interface on the egress node to assign the IP to.
+	// The value is restricted to a valid Linux interface name because it is
+	// used verbatim on the egress node.
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_.-]{1,15}$`
 	// +kubebuilder:default=eth0
 	// +optional
 	Interface string `json:"interface,omitempty"`
@@ -43,6 +46,22 @@ type EgressGatewaySpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +required
 	Destinations []Destination `json:"destinations"`
+
+	// createRoutes enables management of routes on the egress node so each
+	// destination CIDR is reachable from the node. When enabled, a route is
+	// created per destination via its nextHop, or via the node's current
+	// default gateway when nextHop is omitted.
+	// +kubebuilder:default=false
+	// +optional
+	CreateRoutes bool `json:"createRoutes,omitempty"`
+
+	// pinnerImage is the container image used for the IP pinner DaemonSet.
+	// The image must provide iproute2 for event-driven monitoring; without it
+	// the pinner falls back to periodic checks. Override this in air-gapped
+	// environments with an internal registry image.
+	// +kubebuilder:default="alpine:3.19"
+	// +optional
+	PinnerImage string `json:"pinnerImage,omitempty"`
 }
 
 // Destination defines a CIDR that should be routed via the egress gateway.
@@ -51,6 +70,13 @@ type Destination struct {
 	// +kubebuilder:validation:Pattern=`^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$`
 	// +required
 	CIDR string `json:"cidr"`
+
+	// nextHop is the gateway IP to route this destination via when
+	// createRoutes is enabled. When omitted, the node's current default
+	// gateway is used.
+	// +kubebuilder:validation:Pattern=`^(\d{1,3}\.){3}\d{1,3}$`
+	// +optional
+	NextHop string `json:"nextHop,omitempty"`
 }
 
 // EgressGatewayStatus defines the observed state of EgressGateway.

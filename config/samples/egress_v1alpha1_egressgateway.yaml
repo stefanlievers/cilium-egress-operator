@@ -6,4 +6,29 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: egressgateway-sample
 spec:
-  # TODO(user): Add fields here
+  # The IP that egress traffic leaves the cluster with. The operator pins
+  # this IP on the interface of the labeled egress node.
+  egressIP: 192.0.2.10
+  # Network interface on the egress node (default: eth0).
+  interface: eth0
+  # Pods selected here will use this egress gateway.
+  podSelector:
+    matchLabels:
+      app: my-workload
+  # Optional: limit to namespaces matching this selector.
+  # namespaceSelector:
+  #   matchLabels:
+  #     kubernetes.io/metadata.name: my-namespace
+  # Destination CIDRs reached via the egress gateway.
+  destinations:
+    - cidr: 10.50.0.0/16
+      # Optional next-hop for the route; when omitted the node's current
+      # default gateway is used (only relevant with createRoutes: true).
+      nextHop: 192.0.2.1
+    - cidr: 10.60.0.0/16
+  # When true, the operator also manages a route per destination on the
+  # egress node so the CIDR is reachable.
+  createRoutes: true
+  # Optional: override the pinner image for air-gapped environments.
+  # The image should provide iproute2 for event-driven monitoring.
+  # pinnerImage: registry.internal.example/network/alpine-iproute2:3.19

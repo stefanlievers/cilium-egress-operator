@@ -17,15 +17,18 @@ package controller
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -34,6 +37,22 @@ import (
 
 	egressv1alpha1 "github/stefanlievers/cilium-egress-operator/api/v1alpha1"
 )
+
+const (
+	// labelEgressNode markeert de node die als egress gateway fungeert
+	labelEgressNode = "egress-node"
+	// labelControlPlane is het standaard Kubernetes control plane label
+	labelControlPlane = "node-role.kubernetes.io/control-plane"
+	labelValueTrue    = "true"
+)
+
+// pinnerLabels zijn de selector labels van de pinner DaemonSet voor een gateway
+func pinnerLabels(eg *egressv1alpha1.EgressGateway) map[string]string {
+	return map[string]string{
+		"app":            "egress-ip-pinner",
+		"egress-gateway": eg.Name,
+	}
+}
 
 // EgressGatewayReconciler reconciles a EgressGateway object
 type EgressGatewayReconciler struct {
@@ -66,20 +85,21 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	)
 
 	// Stap 1: zorg dat er een egress node is
-	egressNode, err := r.reconcileEgressNode(ctx, eg)
+	egressNode, err := r.reconcileEgressNode(ctx)
 	if err != nil {
 		log.Error(err, "Fout bij reconcilen egress node")
 		return ctrl.Result{}, err
 	}
 
 	// Stap 2: zorg dat de IP pinner DaemonSet bestaat
-	if err := r.reconcileDaemonSet(ctx, eg); err != nil {
+	ds, err := r.reconcileDaemonSet(ctx, eg)
+	if err != nil {
 		log.Error(err, "Fout bij reconcilen DaemonSet")
 		return ctrl.Result{}, err
 	}
 
 	// Stap 3: status terugschrijven
-	if err := r.updateStatus(ctx, eg, egressNode); err != nil {
+	if err := r.updateStatus(ctx, eg, egressNode, ds); err != nil {
 		log.Error(err, "Fout bij updaten status")
 		return ctrl.Result{}, err
 	}
@@ -87,12 +107,12 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *egressv1alpha1.EgressGateway) (string, error) {
+func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (string, error) {
 	log := logf.FromContext(ctx)
 
 	egressNodes := &corev1.NodeList{}
 	if err := r.List(ctx, egressNodes, client.MatchingLabels{
-		"egress-node": "true",
+		labelEgressNode: labelValueTrue,
 	}); err != nil {
 		return "", err
 	}
@@ -107,7 +127,7 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *e
 
 	controlPlaneNodes := &corev1.NodeList{}
 	if err := r.List(ctx, controlPlaneNodes, client.MatchingLabels{
-		"node-role.kubernetes.io/control-plane": "",
+		labelControlPlane: "",
 	}); err != nil {
 		return "", err
 	}
@@ -117,15 +137,18 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *e
 		return "", nil
 	}
 
-	sort.Slice(controlPlaneNodes.Items, func(i, j int) bool {
-		return controlPlaneNodes.Items[i].Name < controlPlaneNodes.Items[j].Name
+	slices.SortFunc(controlPlaneNodes.Items, func(a, b corev1.Node) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	target := &controlPlaneNodes.Items[0]
 	log.Info("Labelen van egress node", "node", target.Name)
 
 	patch := client.MergeFrom(target.DeepCopy())
-	target.Labels["egress-node"] = "true"
+	if target.Labels == nil {
+		target.Labels = map[string]string{}
+	}
+	target.Labels[labelEgressNode] = labelValueTrue
 	if err := r.Patch(ctx, target, patch); err != nil {
 		return "", err
 	}
@@ -135,14 +158,15 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *e
 }
 
 // reconcileDaemonSet zorgt dat de IP pinner DaemonSet bestaat en up-to-date is.
-func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *egressv1alpha1.EgressGateway) error {
+// De teruggegeven DaemonSet bevat de actuele status (voor egressIPConfirmed).
+func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *egressv1alpha1.EgressGateway) (*appsv1.DaemonSet, error) {
 	log := logf.FromContext(ctx)
 
 	dsName := fmt.Sprintf("egress-ip-pinner-%s", eg.Name)
 	desired := r.buildDaemonSet(eg, dsName)
 
 	if err := ctrl.SetControllerReference(eg, desired, r.Scheme); err != nil {
-		return err
+		return nil, err
 	}
 
 	existing := &appsv1.DaemonSet{}
@@ -153,86 +177,159 @@ func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *eg
 
 	if errors.IsNotFound(err) {
 		log.Info("DaemonSet aanmaken", "daemonset", dsName)
-		return r.Create(ctx, desired)
+		return desired, r.Create(ctx, desired)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	log.Info("DaemonSet updaten", "daemonset", dsName)
 	patch := client.MergeFrom(existing.DeepCopy())
 	existing.Spec = desired.Spec
-	return r.Patch(ctx, existing, patch)
+	return existing, r.Patch(ctx, existing, patch)
+}
+
+// buildPinnerScript bouwt het shell script voor de IP pinner container.
+// Alle geïnterpoleerde waarden zijn door CRD validatiepatronen beperkt tot
+// veilige tekens (IP's, CIDR's, interface namen) — geen shell injectie mogelijk.
+func buildPinnerScript(eg *egressv1alpha1.EgressGateway, iface string) string {
+	var routeLines strings.Builder
+	if eg.Spec.CreateRoutes {
+		for _, dest := range eg.Spec.Destinations {
+			fmt.Fprintf(&routeLines, "  ensure_route %q %q\n", dest.CIDR, dest.NextHop)
+		}
+	}
+
+	return fmt.Sprintf(`
+set -eu
+IFACE=%q
+IP=%q
+
+# Probeer iproute2 te installeren voor event-driven bewaking via ip monitor.
+# Faalt stil in air-gapped omgevingen; dan periodieke controle als terugval.
+command -v apk >/dev/null 2>&1 && apk add --no-cache iproute2 >/dev/null 2>&1 || true
+
+ensure_ip() {
+  ip addr show dev "$IFACE" | grep -q "inet $IP/32" || {
+    echo "Egress IP $IP toevoegen aan $IFACE"
+    ip addr add "$IP/32" dev "$IFACE" || true
+  }
+}
+
+ensure_route() {
+  CIDR=$1
+  VIA=$2
+  # Geen expliciete next-hop: de huidige default gateway van de node volgen
+  if [ -z "$VIA" ]; then
+    VIA=$(ip route show default 2>/dev/null | sed -n 's/.* via \([0-9.]*\).*/\1/p' | head -n 1)
+  fi
+  if [ -z "$VIA" ]; then
+    echo "Geen next-hop bekend voor $CIDR (geen default gateway gevonden), route overgeslagen"
+    return 0
+  fi
+  ip route show | grep -q "^$CIDR via $VIA dev $IFACE" || {
+    echo "Route $CIDR via $VIA instellen op $IFACE"
+    ip route del "$CIDR" 2>/dev/null || true
+    ip route add "$CIDR" via "$VIA" dev "$IFACE" src "$IP" || true
+  }
+}
+
+apply() {
+  ensure_ip
+%s}
+
+apply
+echo "Egress IP $IP actief op $IFACE"
+
+# Bewaken: event-driven met ip monitor (iproute2), anders periodiek (busybox)
+if ip -V 2>/dev/null | grep -qi iproute2; then
+  echo "Bewaken via ip monitor"
+  ip monitor address route | while read -r _; do apply; done
+else
+  echo "ip monitor niet beschikbaar, terugvallen op periodieke controle"
+  while true; do sleep 60; apply; done
+fi
+`, iface, eg.Spec.EgressIP, routeLines.String())
 }
 
 // buildDaemonSet bouwt de gewenste DaemonSet spec voor de IP pinner.
-// Het egress IP wordt als extra adres op eth0 gezet — geen dummy interface.
-// Bij OS reboot herstelt de DaemonSet het IP automatisch via ip monitor.
+// Het egress IP komt als extra IP op de interface — geen dummy interface.
+// Bij OS reboot herstelt de DaemonSet het IP (en routes) automatisch.
 func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGateway, name string) *appsv1.DaemonSet {
-	pinnerScript := fmt.Sprintf(`
-set -e
-IFACE=%s
-IP=%s
+	iface := eg.Spec.Interface
+	if iface == "" {
+		iface = "eth0"
+	}
+	image := eg.Spec.PinnerImage
+	if image == "" {
+		image = "alpine:3.19"
+	}
 
-# IP zetten als het er niet op staat
-ip addr show $IFACE | grep -q $IP || ip addr add $IP/32 dev $IFACE
-echo "Egress IP $IP actief op $IFACE"
+	pinnerScript := buildPinnerScript(eg, iface)
 
-# Bewaken via ip monitor — herstellen als het IP wegvalt
-ip monitor address | while read -r event; do
-  ip addr show $IFACE | grep -q $IP || {
-    echo "Egress IP weggevallen, herstellen..."
-    ip addr add $IP/32 dev $IFACE
-  }
-done
-`, eg.Spec.Interface, eg.Spec.EgressIP)
-
-	privileged := true
+	dsLabels := pinnerLabels(eg)
+	dsLabels["app.kubernetes.io/managed-by"] = "cilium-egress-operator"
 
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: eg.Namespace,
-			Labels: map[string]string{
-				"app":                          "egress-ip-pinner",
-				"egress-gateway":               eg.Name,
-				"app.kubernetes.io/managed-by": "cilium-egress-operator",
-			},
+			Labels:    dsLabels,
 		},
 		Spec: appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app":            "egress-ip-pinner",
-					"egress-gateway": eg.Name,
-				},
+				MatchLabels: pinnerLabels(eg),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app":            "egress-ip-pinner",
-						"egress-gateway": eg.Name,
-					},
+					Labels: pinnerLabels(eg),
 				},
 				Spec: corev1.PodSpec{
 					// Alleen op de egress node draaien
 					NodeSelector: map[string]string{
-						"egress-node": "true",
+						labelEgressNode: labelValueTrue,
 					},
 					// hostNetwork zodat we de echte host interfaces zien
 					HostNetwork: true,
 					Containers: []corev1.Container{
 						{
 							Name:  "ip-pinner",
-							Image: "alpine:3.19",
+							Image: image,
 							Command: []string{
 								"/bin/sh",
 								"-c",
 								pinnerScript,
 							},
+							// Geen privileged: NET_ADMIN volstaat voor ip addr/route
 							SecurityContext: &corev1.SecurityContext{
-								Privileged: &privileged,
+								AllowPrivilegeEscalation: ptr.To(false),
 								Capabilities: &corev1.Capabilities{
-									Add: []corev1.Capability{"NET_ADMIN"},
+									Drop: []corev1.Capability{"ALL"},
+									Add:  []corev1.Capability{"NET_ADMIN"},
+								},
+							},
+							// Ready zodra het egress IP daadwerkelijk op de interface staat;
+							// de controller leest dit terug als status.egressIPConfirmed
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{
+											"/bin/sh", "-c",
+											fmt.Sprintf(`ip addr show dev %q | grep -q "inet %s/32"`, iface, eg.Spec.EgressIP),
+										},
+									},
+								},
+								InitialDelaySeconds: 2,
+								PeriodSeconds:       30,
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("5m"),
+									corev1.ResourceMemory: resource.MustParse("16Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("50m"),
+									corev1.ResourceMemory: resource.MustParse("64Mi"),
 								},
 							},
 						},
@@ -251,12 +348,14 @@ done
 	}
 }
 
-func (r *EgressGatewayReconciler) updateStatus(ctx context.Context, eg *egressv1alpha1.EgressGateway, egressNode string) error {
+func (r *EgressGatewayReconciler) updateStatus(ctx context.Context, eg *egressv1alpha1.EgressGateway, egressNode string, ds *appsv1.DaemonSet) error {
 	patch := client.MergeFrom(eg.DeepCopy())
 
 	now := metav1.NewTime(time.Now())
 	eg.Status.EgressNode = egressNode
 	eg.Status.LastReconciled = &now
+	// De pinner pod is pas Ready als het IP op de interface staat (readiness probe)
+	eg.Status.EgressIPConfirmed = ds != nil && ds.Status.NumberReady > 0
 
 	return r.Status().Patch(ctx, eg, patch)
 }
@@ -282,6 +381,7 @@ func (r *EgressGatewayReconciler) nodeToEgressGateway(ctx context.Context, obj c
 func (r *EgressGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&egressv1alpha1.EgressGateway{}).
+		Owns(&appsv1.DaemonSet{}).
 		Watches(
 			&corev1.Node{},
 			handler.EnqueueRequestsFromMapFunc(r.nodeToEgressGateway),

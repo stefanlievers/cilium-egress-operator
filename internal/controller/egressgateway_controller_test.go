@@ -158,6 +158,47 @@ var _ = Describe("EgressGateway Controller", func() {
 			Expect(resource.Status.EgressIPConfirmed).To(BeFalse())
 		})
 
+		It("should label a worker node when nodeRole is worker", func() {
+			const workerName = "test-worker"
+
+			By("creating a worker node")
+			worker := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: workerName},
+			}
+			Expect(k8sClient.Create(ctx, worker)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, worker)
+			})
+
+			By("setting nodeRole to worker on the resource")
+			resource := &egressv1alpha1.EgressGateway{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+			resource.Spec.NodeRole = egressv1alpha1.NodeRoleWorker
+			Expect(k8sClient.Update(ctx, resource)).To(Succeed())
+
+			By("Reconciling the created resource")
+			controllerReconciler := &EgressGatewayReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("labeling the worker node, not the control plane node")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: workerName}, worker)).To(Succeed())
+			Expect(worker.Labels).To(HaveKeyWithValue("egress-node", "true"))
+
+			cp := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, cp)).To(Succeed())
+			Expect(cp.Labels).NotTo(HaveKey("egress-node"))
+
+			By("writing the worker back to status")
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+			Expect(resource.Status.EgressNode).To(Equal(workerName))
+		})
+
 		It("should not create routes in the script when createRoutes is false", func() {
 			By("disabling createRoutes on the resource")
 			resource := &egressv1alpha1.EgressGateway{}

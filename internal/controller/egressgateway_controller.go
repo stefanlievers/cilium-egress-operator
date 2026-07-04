@@ -43,7 +43,9 @@ const (
 	labelEgressNode = "egress-node"
 	// labelControlPlane is the standard Kubernetes control plane label
 	labelControlPlane = "node-role.kubernetes.io/control-plane"
-	labelValueTrue    = "true"
+	// labelControlPlaneLegacy is the deprecated master label still present on older clusters
+	labelControlPlaneLegacy = "node-role.kubernetes.io/master"
+	labelValueTrue          = "true"
 )
 
 // pinnerLabels are the selector labels of the pinner DaemonSet for a gateway
@@ -85,7 +87,7 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	)
 
 	// Step 1: make sure there is an egress node
-	egressNode, err := r.reconcileEgressNode(ctx)
+	egressNode, err := r.reconcileEgressNode(ctx, eg)
 	if err != nil {
 		log.Error(err, "Failed to reconcile egress node")
 		return ctrl.Result{}, err
@@ -107,7 +109,7 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (string, error) {
+func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *egressv1alpha1.EgressGateway) (string, error) {
 	log := logf.FromContext(ctx)
 
 	egressNodes := &corev1.NodeList{}
@@ -123,26 +125,28 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (stri
 		return nodeName, nil
 	}
 
-	log.Info("No egress node found, looking for control plane nodes")
+	role := eg.Spec.NodeRole
+	if role == "" {
+		role = egressv1alpha1.NodeRoleControlPlane
+	}
+	log.Info("No egress node found, looking for candidates", "nodeRole", role)
 
-	controlPlaneNodes := &corev1.NodeList{}
-	if err := r.List(ctx, controlPlaneNodes, client.MatchingLabels{
-		labelControlPlane: "",
-	}); err != nil {
+	candidates, err := r.listCandidateNodes(ctx, role)
+	if err != nil {
 		return "", err
 	}
 
-	if len(controlPlaneNodes.Items) == 0 {
-		log.Info("No control plane nodes found, waiting")
+	if len(candidates) == 0 {
+		log.Info("No candidate nodes found for role, waiting", "nodeRole", role)
 		return "", nil
 	}
 
-	slices.SortFunc(controlPlaneNodes.Items, func(a, b corev1.Node) int {
+	slices.SortFunc(candidates, func(a, b corev1.Node) int {
 		return strings.Compare(a.Name, b.Name)
 	})
 
-	target := &controlPlaneNodes.Items[0]
-	log.Info("Labeling egress node", "node", target.Name)
+	target := &candidates[0]
+	log.Info("Labeling egress node", "node", target.Name, "nodeRole", role)
 
 	patch := client.MergeFrom(target.DeepCopy())
 	if target.Labels == nil {
@@ -155,6 +159,38 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context) (stri
 
 	log.Info("Egress node labeled successfully", "node", target.Name)
 	return target.Name, nil
+}
+
+// listCandidateNodes returns the nodes eligible for the egress label given the
+// desired node role. Workers are nodes without a control plane label; there is
+// no universal worker label across distributions.
+func (r *EgressGatewayReconciler) listCandidateNodes(ctx context.Context, role egressv1alpha1.NodeRole) ([]corev1.Node, error) {
+	if role == egressv1alpha1.NodeRoleControlPlane {
+		controlPlaneNodes := &corev1.NodeList{}
+		if err := r.List(ctx, controlPlaneNodes, client.MatchingLabels{
+			labelControlPlane: "",
+		}); err != nil {
+			return nil, err
+		}
+		return controlPlaneNodes.Items, nil
+	}
+
+	allNodes := &corev1.NodeList{}
+	if err := r.List(ctx, allNodes); err != nil {
+		return nil, err
+	}
+
+	var workers []corev1.Node
+	for _, node := range allNodes.Items {
+		if _, ok := node.Labels[labelControlPlane]; ok {
+			continue
+		}
+		if _, ok := node.Labels[labelControlPlaneLegacy]; ok {
+			continue
+		}
+		workers = append(workers, node)
+	}
+	return workers, nil
 }
 
 // reconcileDaemonSet ensures the IP pinner DaemonSet exists and is up to date.

@@ -11,6 +11,10 @@ spec:
   egressIP: 192.0.2.10
   # Network interface on the egress node (default: eth0).
   interface: eth0
+  # Which kind of node to label as egress node when none is labeled yet:
+  # control-plane (default) or worker. An existing egress-node label always
+  # wins. Note: workloads on the egress node itself do not use the egress IP.
+  nodeRole: control-plane
   # Pods selected here will use this egress gateway.
   podSelector:
     matchLabels:

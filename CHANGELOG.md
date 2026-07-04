@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Route management: opt-in `createRoutes` with per-destination optional `nextHop`,
   falling back to the node's default gateway
 - `pinnerImage` spec field to override the pinner container image (air-gapped support)
+- `nodeRole` spec field (`control-plane` | `worker`) to choose which kind of node gets
+  the egress label; workloads on the egress node itself do not use the egress IP
 - Status writeback: `egressNode`, `egressIPConfirmed` (backed by a readiness probe on the
   pinner), and `lastReconciled`
 - Architecture Decision Records (MADR) in `docs/adr/`, compatibility matrix in

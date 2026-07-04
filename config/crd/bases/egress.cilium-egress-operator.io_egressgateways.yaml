@@ -145,6 +145,18 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              nodeRole:
+                default: control-plane
+                description: |-
+                  nodeRole selects which kind of node is labeled as egress node when no
+                  node carries the egress label yet: a control plane node or a worker
+                  node. An already labeled egress node is always respected regardless of
+                  this value. Note that workloads scheduled on the egress node itself do
+                  not use the egress IP by design.
+                enum:
+                - control-plane
+                - worker
+                type: string
               pinnerImage:
                 default: alpine:3.19
                 description: |-

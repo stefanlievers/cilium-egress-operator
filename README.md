@@ -54,15 +54,25 @@ The operator reconciles this into:
 
 ### Node selection
 
-The operator watches all Node events. When no node carries the `egress-node: "true"` label, the controller deterministically selects the first control-plane node (sorted by name) and labels it. No webhooks, no polling — pure event-driven reconciliation ([ADR-0003](docs/adr/0003-deterministic-node-selection.md)).
+The operator watches all Node events. When no node carries the `egress-node: "true"` label, the controller deterministically selects a candidate node (sorted by name) and labels it. No webhooks, no polling — pure event-driven reconciliation ([ADR-0003](docs/adr/0003-deterministic-node-selection.md)).
+
+Which nodes are candidates is controlled by `spec.nodeRole`:
+
+- `control-plane` (default) — nodes with the `node-role.kubernetes.io/control-plane` label
+- `worker` — nodes *without* a control-plane (or legacy master) label
+
+An existing `egress-node: "true"` label is always respected, regardless of `nodeRole` — pre-label any node yourself to override the automatic choice.
 
 ```
 Node event received
     ↓
 Any node with egress-node: "true"?
     ├── Yes → do nothing
-    └── No  → label controlPlaneNodes[0] (sorted by name)
+    └── No  → label candidates(nodeRole)[0] (sorted by name)
 ```
+
+> [!WARNING]
+> **Workloads on the egress node itself do not use the egress IP — by design.** Traffic from pods co-located with the gateway does not traverse the egress redirection path that traffic from other nodes takes through the BPF datapath, and can leave the node with its regular source addressing. Cilium's [egress gateway documentation](https://docs.cilium.io/en/stable/network/egress-gateway/egress-gateway/) does not cover the same-node case explicitly, so treat co-location as unsupported: keep egress-selected workloads off the egress node (taints, anti-affinity, or a dedicated node), and use `nodeRole` to steer the label toward a node class your workloads don't run on. See also the [egress gateway troubleshooting guide](https://docs.cilium.io/en/stable/network/egress-gateway/egress-gateway-troubleshooting/).
 
 ### IP lifecycle
 
@@ -161,6 +171,7 @@ egress-external   10.255.26.10   rke2-cp-01   true                        2m
 |---|---|---|---|---|
 | `egressIP` | string (IPv4) | yes | — | IP to pin on the egress node's interface (added as `/32`) |
 | `interface` | string | no | `eth0` | Interface on the egress node; restricted to valid Linux interface names |
+| `nodeRole` | `control-plane` \| `worker` | no | `control-plane` | Which kind of node to label as egress node when none is labeled yet |
 | `podSelector` | LabelSelector | yes | — | Pods that will use this egress gateway |
 | `namespaceSelector` | LabelSelector | no | — | Limits selected pods to matching namespaces |
 | `destinations` | list | yes (min 1) | — | Destination CIDRs reached via the gateway |
@@ -192,7 +203,8 @@ Security is a first-class design constraint ([SECURITY.md](SECURITY.md), [ADR-00
 
 Honest notes on current boundaries — most of these are tracked on the roadmap:
 
-- **One egress node per cluster.** The `egress-node: "true"` label is cluster-global; all `EgressGateway` resources share the same egress node. If you label multiple nodes manually, every labeled node runs the pinner and would claim the IP — don't do that.
+- **One egress node per cluster.** The `egress-node: "true"` label is cluster-global; all `EgressGateway` resources share the same egress node (and therefore the same `nodeRole` outcome — the first gateway to reconcile wins). If you label multiple nodes manually, every labeled node runs the pinner and would claim the IP — don't do that.
+- **Don't co-locate egress-selected workloads with the gateway.** Pods on the egress node do not use the egress IP (see the warning under [Node selection](#node-selection)).
 - **The operator labels, but does not un-label.** If the egress node disappears, a new one is labeled automatically; a manually added second label is not removed.
 - **IPv4 only.** CRD validation currently rejects IPv6 addresses and CIDRs.
 - **Native routing / BGP only.** In tunnel mode (VXLAN/Geneve) Cilium's egress gateway is not supported by Cilium itself.

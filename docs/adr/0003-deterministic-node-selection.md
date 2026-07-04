@@ -40,3 +40,14 @@ respected (users can pre-label any node, including workers, to override the choi
   (per-gateway labels are a roadmap item).
 - Bad: the operator does not remove extra labels; if a user labels two nodes, both run the
   pinner. Documented as a limitation.
+
+## Amendment (2026-07-04): configurable node role
+
+`spec.nodeRole` (`control-plane` | `worker`, default `control-plane`) selects the candidate
+pool when no node is labeled yet. Workers are defined as nodes *without* a control-plane
+(or legacy `node-role.kubernetes.io/master`) label, since no universal worker label exists
+across distributions. The driver is workload placement: pods co-located on the egress node
+do not use the egress IP, so users need to steer the label toward a node class their
+egress-selected workloads don't run on. Selection within the pool remains deterministic
+(sorted by name), and an existing label still always wins — including one that contradicts
+`nodeRole`.

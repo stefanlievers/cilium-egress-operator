@@ -19,6 +19,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
+// NodeRole selects which kind of node is eligible for the egress label.
+type NodeRole string
+
+const (
+	// NodeRoleControlPlane selects control plane nodes as egress node candidates.
+	NodeRoleControlPlane NodeRole = "control-plane"
+	// NodeRoleWorker selects worker nodes as egress node candidates.
+	NodeRoleWorker NodeRole = "worker"
+)
+
 // EgressGatewaySpec defines the desired state of EgressGateway
 type EgressGatewaySpec struct {
 	// egressIP is the IP address to assign to the egress interface.
@@ -46,6 +56,16 @@ type EgressGatewaySpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +required
 	Destinations []Destination `json:"destinations"`
+
+	// nodeRole selects which kind of node is labeled as egress node when no
+	// node carries the egress label yet: a control plane node or a worker
+	// node. An already labeled egress node is always respected regardless of
+	// this value. Note that workloads scheduled on the egress node itself do
+	// not use the egress IP by design.
+	// +kubebuilder:validation:Enum=control-plane;worker
+	// +kubebuilder:default=control-plane
+	// +optional
+	NodeRole NodeRole `json:"nodeRole,omitempty"`
 
 	// createRoutes enables management of routes on the egress node so each
 	// destination CIDR is reachable from the node. When enabled, a route is

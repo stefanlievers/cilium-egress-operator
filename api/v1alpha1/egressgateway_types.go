@@ -27,7 +27,7 @@ type EgressGatewaySpec struct {
 	EgressIP string `json:"egressIP"`
 
 	// interface is the network interface on the egress node to assign the IP to.
-	// +kubebuilder:default=egress0
+	// +kubebuilder:default=eth0
 	// +optional
 	Interface string `json:"interface,omitempty"`
 

@@ -32,7 +32,7 @@ const (
 // EgressGatewaySpec defines the desired state of EgressGateway
 type EgressGatewaySpec struct {
 	// egressIP is the IP address to assign to the egress interface.
-	// +kubebuilder:validation:Pattern=`^(\d{1,3}\.){3}\d{1,3}$`
+	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$`
 	// +required
 	EgressIP string `json:"egressIP"`
 
@@ -87,14 +87,14 @@ type EgressGatewaySpec struct {
 // Destination defines a CIDR that should be routed via the egress gateway.
 type Destination struct {
 	// cidr is the destination network in CIDR notation.
-	// +kubebuilder:validation:Pattern=`^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$`
+	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$`
 	// +required
 	CIDR string `json:"cidr"`
 
 	// nextHop is the gateway IP to route this destination via when
 	// createRoutes is enabled. When omitted, the node's current default
 	// gateway is used.
-	// +kubebuilder:validation:Pattern=`^(\d{1,3}\.){3}\d{1,3}$`
+	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$`
 	// +optional
 	NextHop string `json:"nextHop,omitempty"`
 }
@@ -126,6 +126,7 @@ type EgressGatewayStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:validation:XValidation:rule="size(self.metadata.name) <= 63",message="metadata.name may be at most 63 characters: it is used as a label value on the pinner DaemonSet"
 // +kubebuilder:printcolumn:name="EgressIP",type=string,JSONPath=`.spec.egressIP`
 // +kubebuilder:printcolumn:name="Node",type=string,JSONPath=`.status.egressNode`
 // +kubebuilder:printcolumn:name="IPConfirmed",type=boolean,JSONPath=`.status.egressIPConfirmed`

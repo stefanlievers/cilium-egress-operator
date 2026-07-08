@@ -158,6 +158,50 @@ var _ = Describe("EgressGateway Controller", func() {
 			Expect(resource.Status.EgressIPConfirmed).To(BeFalse())
 		})
 
+		It("should be a no-op when reconciling twice", func() {
+			controllerReconciler := &EgressGatewayReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			By("Reconciling twice")
+			for range 2 {
+				_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+					NamespacedName: typeNamespacedName,
+				})
+				Expect(err).NotTo(HaveOccurred())
+			}
+
+			resource := &egressv1alpha1.EgressGateway{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+			firstReconciled := resource.Status.LastReconciled
+			Expect(firstReconciled).NotTo(BeNil())
+
+			ds := &appsv1.DaemonSet{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "egress-ip-pinner-" + resourceName,
+				Namespace: resourceNamespace,
+			}, ds)).To(Succeed())
+			dsVersion := ds.ResourceVersion
+
+			By("Reconciling a third time and expecting no writes")
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+			Expect(resource.Status.LastReconciled.Time).To(Equal(firstReconciled.Time),
+				"status must not be rewritten when nothing changed")
+
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "egress-ip-pinner-" + resourceName,
+				Namespace: resourceNamespace,
+			}, ds)).To(Succeed())
+			Expect(ds.ResourceVersion).To(Equal(dsVersion),
+				"DaemonSet must not be rewritten when nothing changed")
+		})
+
 		It("should label a worker node when nodeRole is worker", func() {
 			const workerName = "test-worker"
 

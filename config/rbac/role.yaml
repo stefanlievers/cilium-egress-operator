@@ -12,7 +12,6 @@ rules:
   - get
   - list
   - patch
-  - update
   - watch
 - apiGroups:
   - apps
@@ -31,19 +30,9 @@ rules:
   resources:
   - egressgateways
   verbs:
-  - create
-  - delete
   - get
   - list
-  - patch
-  - update
   - watch
-- apiGroups:
-  - egress.cilium-egress-operator.io
-  resources:
-  - egressgateways/finalizers
-  verbs:
-  - update
 - apiGroups:
   - egress.cilium-egress-operator.io
   resources:

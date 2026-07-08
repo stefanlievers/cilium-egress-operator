@@ -227,6 +227,7 @@ Honest notes on current boundaries — most of these are tracked on the roadmap:
 
 - **One egress node per cluster.** The `egress-node: "true"` label is cluster-global; all `EgressGateway` resources share the same egress node (and therefore the same `nodeRole` outcome — the first gateway to reconcile wins). If you label multiple nodes manually, every labeled node runs the pinner and would claim the IP — don't do that.
 - **Don't co-locate egress-selected workloads with the gateway.** Pods on the egress node do not use the egress IP (see the warning under [Node selection](#node-selection)).
+- **Keep destinations disjoint across gateways.** Two `EgressGateway` resources with `createRoutes: true`, the same destination CIDR, and different `nextHop` values will fight over the same node route.
 - **The operator labels, but does not un-label.** If the egress node disappears, a new one is labeled automatically; a manually added second label is not removed.
 - **IPv4 only.** CRD validation currently rejects IPv6 addresses and CIDRs.
 - **Native routing / BGP only.** In tunnel mode (VXLAN/Geneve) Cilium's egress gateway is not supported by Cilium itself.

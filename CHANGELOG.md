@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+- RBAC trimmed to least privilege: the operator no longer holds create/update/delete on
+  its own CR (read + status only) and only get/list/watch/patch on nodes
+- Terminating nodes are no longer egress node candidates
+- Controller logs use production (JSON) format instead of development mode
+
+### Fixed
+- Reconcile write loop: unconditional `lastReconciled` bumps re-triggered the controller's
+  own watch indefinitely; status is now only written when it actually changes, and the
+  controller ignores non-generation changes of its own CR
+- Node status heartbeats no longer reconcile every gateway: the Node watch only fires on
+  create, delete, and label changes
+- The pinner DaemonSet is no longer patched on every reconcile; a spec-hash annotation
+  makes unchanged reconciles read-only
+- CRD validation now rejects out-of-range IPv4 octets (e.g. `999.1.1.1`) and CIDR prefixes
+  above `/32`, and rejects `metadata.name` longer than 63 characters (used as label value)
 
 ## [0.1.0] - 2026-07-04
 

@@ -16,6 +16,9 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -30,9 +33,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	egressv1alpha1 "github/stefanlievers/cilium-egress-operator/api/v1alpha1"
@@ -46,6 +51,9 @@ const (
 	// labelControlPlaneLegacy is the deprecated master label still present on older clusters
 	labelControlPlaneLegacy = "node-role.kubernetes.io/master"
 	labelValueTrue          = "true"
+	// annotationSpecHash stores a hash of the generated DaemonSet spec so
+	// reconciles can skip API writes when nothing changed
+	annotationSpecHash = "egress.cilium-egress-operator.io/spec-hash"
 )
 
 // pinnerLabels are the selector labels of the pinner DaemonSet for a gateway
@@ -62,10 +70,11 @@ type EgressGatewayReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=egress.cilium-egress-operator.io,resources=egressgateways,verbs=get;list;watch;create;update;patch;delete
+// The operator only reads its own CR and writes its status; it never creates,
+// mutates, or deletes EgressGateway objects themselves (least privilege).
+// +kubebuilder:rbac:groups=egress.cilium-egress-operator.io,resources=egressgateways,verbs=get;list;watch
 // +kubebuilder:rbac:groups=egress.cilium-egress-operator.io,resources=egressgateways/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=egress.cilium-egress-operator.io,resources=egressgateways/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch;update;patch
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=apps,resources=daemonsets,verbs=get;list;watch;create;update;patch;delete
 
 func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -163,37 +172,43 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *e
 
 // listCandidateNodes returns the nodes eligible for the egress label given the
 // desired node role. Workers are nodes without a control plane label; there is
-// no universal worker label across distributions.
+// no universal worker label across distributions. Terminating nodes are never
+// candidates.
 func (r *EgressGatewayReconciler) listCandidateNodes(ctx context.Context, role egressv1alpha1.NodeRole) ([]corev1.Node, error) {
-	if role == egressv1alpha1.NodeRoleControlPlane {
-		controlPlaneNodes := &corev1.NodeList{}
-		if err := r.List(ctx, controlPlaneNodes, client.MatchingLabels{
-			labelControlPlane: "",
-		}); err != nil {
-			return nil, err
-		}
-		return controlPlaneNodes.Items, nil
-	}
-
 	allNodes := &corev1.NodeList{}
 	if err := r.List(ctx, allNodes); err != nil {
 		return nil, err
 	}
 
-	var workers []corev1.Node
+	var candidates []corev1.Node
 	for _, node := range allNodes.Items {
-		if _, ok := node.Labels[labelControlPlane]; ok {
+		if node.DeletionTimestamp != nil {
 			continue
 		}
-		if _, ok := node.Labels[labelControlPlaneLegacy]; ok {
-			continue
+		_, isControlPlane := node.Labels[labelControlPlane]
+		if !isControlPlane {
+			_, isControlPlane = node.Labels[labelControlPlaneLegacy]
 		}
-		workers = append(workers, node)
+		if (role == egressv1alpha1.NodeRoleControlPlane) == isControlPlane {
+			candidates = append(candidates, node)
+		}
 	}
-	return workers, nil
+	return candidates, nil
+}
+
+// hashDaemonSetSpec returns a stable hash of the generated DaemonSet spec,
+// used to detect whether an update is actually needed.
+func hashDaemonSetSpec(ds *appsv1.DaemonSet) (string, error) {
+	raw, err := json.Marshal(ds.Spec)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // reconcileDaemonSet ensures the IP pinner DaemonSet exists and is up to date.
+// A spec hash annotation makes this a read-only no-op when nothing changed.
 // The returned DaemonSet carries the current status (for egressIPConfirmed).
 func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *egressv1alpha1.EgressGateway) (*appsv1.DaemonSet, error) {
 	log := logf.FromContext(ctx)
@@ -201,12 +216,18 @@ func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *eg
 	dsName := fmt.Sprintf("egress-ip-pinner-%s", eg.Name)
 	desired := r.buildDaemonSet(eg, dsName)
 
+	specHash, err := hashDaemonSetSpec(desired)
+	if err != nil {
+		return nil, err
+	}
+	desired.Annotations = map[string]string{annotationSpecHash: specHash}
+
 	if err := ctrl.SetControllerReference(eg, desired, r.Scheme); err != nil {
 		return nil, err
 	}
 
 	existing := &appsv1.DaemonSet{}
-	err := r.Get(ctx, types.NamespacedName{
+	err = r.Get(ctx, types.NamespacedName{
 		Name:      dsName,
 		Namespace: eg.Namespace,
 	}, existing)
@@ -219,9 +240,17 @@ func (r *EgressGatewayReconciler) reconcileDaemonSet(ctx context.Context, eg *eg
 		return nil, err
 	}
 
+	if existing.Annotations[annotationSpecHash] == specHash {
+		return existing, nil
+	}
+
 	log.Info("Updating DaemonSet", "daemonset", dsName)
 	patch := client.MergeFrom(existing.DeepCopy())
 	existing.Spec = desired.Spec
+	if existing.Annotations == nil {
+		existing.Annotations = map[string]string{}
+	}
+	existing.Annotations[annotationSpecHash] = specHash
 	return existing, r.Patch(ctx, existing, patch)
 }
 
@@ -385,13 +414,23 @@ func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGatewa
 }
 
 func (r *EgressGatewayReconciler) updateStatus(ctx context.Context, eg *egressv1alpha1.EgressGateway, egressNode string, ds *appsv1.DaemonSet) error {
+	// The pinner pod only becomes Ready once the IP is on the interface (readiness probe)
+	ipConfirmed := ds != nil && ds.Status.NumberReady > 0
+
+	// Skip the write when nothing changed: a status patch is itself a watch
+	// event, and unconditional timestamp bumps would reconcile forever.
+	if eg.Status.EgressNode == egressNode &&
+		eg.Status.EgressIPConfirmed == ipConfirmed &&
+		eg.Status.LastReconciled != nil {
+		return nil
+	}
+
 	patch := client.MergeFrom(eg.DeepCopy())
 
 	now := metav1.NewTime(time.Now())
 	eg.Status.EgressNode = egressNode
+	eg.Status.EgressIPConfirmed = ipConfirmed
 	eg.Status.LastReconciled = &now
-	// The pinner pod only becomes Ready once the IP is on the interface (readiness probe)
-	eg.Status.EgressIPConfirmed = ds != nil && ds.Status.NumberReady > 0
 
 	return r.Status().Patch(ctx, eg, patch)
 }
@@ -416,11 +455,16 @@ func (r *EgressGatewayReconciler) nodeToEgressGateway(ctx context.Context, obj c
 
 func (r *EgressGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&egressv1alpha1.EgressGateway{}).
+		// Only reconcile on spec changes; our own status patches must not
+		// trigger new reconciles
+		For(&egressv1alpha1.EgressGateway{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&appsv1.DaemonSet{}).
+		// Node creates/deletes and label changes matter for egress node
+		// selection; status heartbeats of every node in the cluster do not
 		Watches(
 			&corev1.Node{},
 			handler.EnqueueRequestsFromMapFunc(r.nodeToEgressGateway),
+			builder.WithPredicates(predicate.LabelChangedPredicate{}),
 		).
 		Named("egressgateway").
 		Complete(r)

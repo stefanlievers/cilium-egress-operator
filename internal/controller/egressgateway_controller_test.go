@@ -145,7 +145,7 @@ var _ = Describe("EgressGateway Controller", func() {
 			Expect(script).To(ContainSubstring(`ensure_route "10.60.0.0/16" ""`))
 
 			By("tolerating control-plane and etcd taints")
-			tolerationKeys := []string{}
+			tolerationKeys := make([]string, 0, len(ds.Spec.Template.Spec.Tolerations))
 			for _, t := range ds.Spec.Template.Spec.Tolerations {
 				tolerationKeys = append(tolerationKeys, t.Key)
 			}

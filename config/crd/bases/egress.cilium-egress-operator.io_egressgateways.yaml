@@ -157,6 +157,20 @@ spec:
                 - control-plane
                 - worker
                 type: string
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                default:
+                  egress-node: "true"
+                description: |-
+                  nodeSelector overrides the labels used to identify the egress node.
+                  The operator looks for a node matching all of these labels, applies
+                  them to the elected node when none matches yet, and schedules the IP
+                  pinner with the same selector. Gateways with different selectors get
+                  independent egress nodes. Keep this in sync with the nodeSelector of
+                  your CiliumEgressGatewayPolicy.
+                minProperties: 1
+                type: object
               pinnerImage:
                 default: alpine:3.19
                 description: |-

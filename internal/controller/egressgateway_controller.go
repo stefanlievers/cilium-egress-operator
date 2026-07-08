@@ -20,6 +20,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -62,6 +63,17 @@ func pinnerLabels(eg *egressv1alpha1.EgressGateway) map[string]string {
 		"app":            "egress-ip-pinner",
 		"egress-gateway": eg.Name,
 	}
+}
+
+// egressNodeSelector returns the labels identifying this gateway's egress
+// node: spec.nodeSelector when set, otherwise the default egress-node label.
+// The CRD defaults the field, but objects created before that default (or
+// bypassing admission defaulting) must still behave identically.
+func egressNodeSelector(eg *egressv1alpha1.EgressGateway) map[string]string {
+	if len(eg.Spec.NodeSelector) > 0 {
+		return eg.Spec.NodeSelector
+	}
+	return map[string]string{labelEgressNode: labelValueTrue}
 }
 
 // EgressGatewayReconciler reconciles a EgressGateway object
@@ -121,10 +133,10 @@ func (r *EgressGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *egressv1alpha1.EgressGateway) (string, error) {
 	log := logf.FromContext(ctx)
 
+	selector := egressNodeSelector(eg)
+
 	egressNodes := &corev1.NodeList{}
-	if err := r.List(ctx, egressNodes, client.MatchingLabels{
-		labelEgressNode: labelValueTrue,
-	}); err != nil {
+	if err := r.List(ctx, egressNodes, client.MatchingLabels(selector)); err != nil {
 		return "", err
 	}
 
@@ -161,7 +173,7 @@ func (r *EgressGatewayReconciler) reconcileEgressNode(ctx context.Context, eg *e
 	if target.Labels == nil {
 		target.Labels = map[string]string{}
 	}
-	target.Labels[labelEgressNode] = labelValueTrue
+	maps.Copy(target.Labels, selector)
 	if err := r.Patch(ctx, target, patch); err != nil {
 		return "", err
 	}
@@ -350,10 +362,8 @@ func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGatewa
 					Labels: pinnerLabels(eg),
 				},
 				Spec: corev1.PodSpec{
-					// Only run on the egress node
-					NodeSelector: map[string]string{
-						labelEgressNode: labelValueTrue,
-					},
+					// Only run on this gateway's egress node
+					NodeSelector: egressNodeSelector(eg),
 					// hostNetwork so we see the real host interfaces
 					HostNetwork: true,
 					Containers: []corev1.Container{

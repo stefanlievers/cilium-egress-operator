@@ -243,6 +243,38 @@ var _ = Describe("EgressGateway Controller", func() {
 			Expect(resource.Status.EgressNode).To(Equal(workerName))
 		})
 
+		It("should use a custom nodeSelector for discovery, labeling and the DaemonSet", func() {
+			By("setting a custom nodeSelector on the resource")
+			resource := &egressv1alpha1.EgressGateway{}
+			Expect(k8sClient.Get(ctx, typeNamespacedName, resource)).To(Succeed())
+			resource.Spec.NodeSelector = map[string]string{"egress-zone": "dmz"}
+			Expect(k8sClient.Update(ctx, resource)).To(Succeed())
+
+			By("Reconciling the created resource")
+			controllerReconciler := &EgressGatewayReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("labeling the elected node with the custom selector labels")
+			node := &corev1.Node{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nodeName}, node)).To(Succeed())
+			Expect(node.Labels).To(HaveKeyWithValue("egress-zone", "dmz"))
+			Expect(node.Labels).NotTo(HaveKey("egress-node"))
+
+			By("scheduling the pinner with the custom selector")
+			ds := &appsv1.DaemonSet{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "egress-ip-pinner-" + resourceName,
+				Namespace: resourceNamespace,
+			}, ds)).To(Succeed())
+			Expect(ds.Spec.Template.Spec.NodeSelector).To(Equal(map[string]string{"egress-zone": "dmz"}))
+		})
+
 		It("should not create routes in the script when createRoutes is false", func() {
 			By("disabling createRoutes on the resource")
 			resource := &egressv1alpha1.EgressGateway{}

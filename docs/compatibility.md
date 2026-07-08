@@ -7,7 +7,8 @@ means, and the hard functional boundaries of the current release line.
 
 | cilium-egress-operator | Kubernetes | Cilium | Go (build) | Status |
 |---|---|---|---|---|
-| v0.1.x | 1.30 – 1.36 | 1.14 – 1.18 | 1.26 | current |
+| v0.2.x | 1.30 – 1.36 | 1.14 – 1.18 | 1.26 | current |
+| v0.1.x | 1.30 – 1.36 | 1.14 – 1.18 | 1.26 | security fixes only |
 
 **Tested** means covered by CI (envtest against Kubernetes 1.36) or verified on a real
 cluster. **Expected** means within the supported skew of our client libraries

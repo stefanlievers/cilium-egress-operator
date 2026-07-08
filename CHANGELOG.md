@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.2.0] - 2026-07-08
+
+### Added
+- `nodeSelector` spec field: override the labels identifying the egress node (default
+  remains `egress-node: "true"`). The selector drives node discovery, is applied to the
+  elected node, and schedules the IP pinner — gateways with different selectors get
+  independent egress nodes ([ADR-0007](docs/adr/0007-configurable-egress-node-selector.md))
+
 ## [0.1.1] - 2026-07-08
 
 ### Changed
@@ -70,6 +78,7 @@ the controller image is published as
 ### Security
 - Upgraded `golang.org/x/net` to v0.56.0 (GO-2026-5026, GO-2026-4918)
 
-[Unreleased]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/stefanlievers/cilium-egress-operator/releases/tag/v0.1.0

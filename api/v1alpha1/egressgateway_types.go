@@ -67,6 +67,17 @@ type EgressGatewaySpec struct {
 	// +optional
 	NodeRole NodeRole `json:"nodeRole,omitempty"`
 
+	// nodeSelector overrides the labels used to identify the egress node.
+	// The operator looks for a node matching all of these labels, applies
+	// them to the elected node when none matches yet, and schedules the IP
+	// pinner with the same selector. Gateways with different selectors get
+	// independent egress nodes. Keep this in sync with the nodeSelector of
+	// your CiliumEgressGatewayPolicy.
+	// +kubebuilder:validation:MinProperties=1
+	// +kubebuilder:default={"egress-node":"true"}
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
 	// createRoutes enables management of routes on the egress node so each
 	// destination CIDR is reachable from the node. When enabled, a route is
 	// created per destination via its nextHop, or via the node's current

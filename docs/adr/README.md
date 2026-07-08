@@ -14,6 +14,7 @@ This project records significant architecture decisions as ADRs in the
 | [0004](0004-event-driven-monitoring.md) | Event-driven monitoring, no polling loops | accepted |
 | [0005](0005-least-privilege-pinner.md) | Least-privilege pinner container (NET_ADMIN only) | accepted |
 | [0006](0006-route-management.md) | Route management with default-gateway fallback | accepted |
+| [0007](0007-configurable-egress-node-selector.md) | Configurable egress node selector | accepted |
 
 ## Creating a new ADR
 

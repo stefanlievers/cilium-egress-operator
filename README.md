@@ -62,21 +62,21 @@ The operator reconciles this into:
 
 ### Node selection
 
-The operator watches all Node events. When no node carries the `egress-node: "true"` label, the controller deterministically selects a candidate node (sorted by name) and labels it. No webhooks, no polling — pure event-driven reconciliation ([ADR-0003](docs/adr/0003-deterministic-node-selection.md)).
+The operator watches all Node events. When no node matches the gateway's egress selector — `egress-node: "true"` by default, overridable per gateway via `spec.nodeSelector` ([ADR-0007](docs/adr/0007-configurable-egress-node-selector.md)) — the controller deterministically selects a candidate node (sorted by name) and applies the selector labels to it. No webhooks, no polling — pure event-driven reconciliation ([ADR-0003](docs/adr/0003-deterministic-node-selection.md)).
 
 Which nodes are candidates is controlled by `spec.nodeRole`:
 
 - `control-plane` (default) — nodes with the `node-role.kubernetes.io/control-plane` label
 - `worker` — nodes *without* a control-plane (or legacy master) label
 
-An existing `egress-node: "true"` label is always respected, regardless of `nodeRole` — pre-label any node yourself to override the automatic choice.
+A node already matching the selector is always respected, regardless of `nodeRole` — pre-label any node yourself to override the automatic choice. Gateways with different `nodeSelector` values elect **independent** egress nodes; keep the selector in sync with the `nodeSelector` of your `CiliumEgressGatewayPolicy`.
 
 ```
 Node event received
     ↓
-Any node with egress-node: "true"?
+Any node matching spec.nodeSelector (default egress-node: "true")?
     ├── Yes → do nothing
-    └── No  → label candidates(nodeRole)[0] (sorted by name)
+    └── No  → apply selector labels to candidates(nodeRole)[0] (sorted by name)
 ```
 
 > [!WARNING]
@@ -194,6 +194,7 @@ egress-external   10.255.26.10   rke2-cp-01   true                        2m
 | `egressIP` | string (IPv4) | yes | — | IP to pin on the egress node's interface (added as `/32`) |
 | `interface` | string | no | `eth0` | Interface on the egress node; restricted to valid Linux interface names |
 | `nodeRole` | `control-plane` \| `worker` | no | `control-plane` | Which kind of node to label as egress node when none is labeled yet |
+| `nodeSelector` | map[string]string | no | `egress-node: "true"` | Labels identifying the egress node; applied on election, used by the pinner. Different selectors per gateway give independent egress nodes |
 | `podSelector` | LabelSelector | yes | — | Pods that will use this egress gateway |
 | `namespaceSelector` | LabelSelector | no | — | Limits selected pods to matching namespaces |
 | `destinations` | list | yes (min 1) | — | Destination CIDRs reached via the gateway |
@@ -225,7 +226,7 @@ Security is a first-class design constraint ([SECURITY.md](SECURITY.md), [ADR-00
 
 Honest notes on current boundaries — most of these are tracked on the roadmap:
 
-- **One egress node per cluster.** The `egress-node: "true"` label is cluster-global; all `EgressGateway` resources share the same egress node (and therefore the same `nodeRole` outcome — the first gateway to reconcile wins). If you label multiple nodes manually, every labeled node runs the pinner and would claim the IP — don't do that.
+- **One egress node per selector.** Gateways sharing a `nodeSelector` (including the default) share one egress node — the first gateway to reconcile elects it. Use distinct selectors for independent egress nodes. If you manually label multiple nodes with the same selector, every one of them runs the pinner and would claim the IP — don't do that. Keep different selectors either identical or fully disjoint.
 - **Don't co-locate egress-selected workloads with the gateway.** Pods on the egress node do not use the egress IP (see the warning under [Node selection](#node-selection)).
 - **Keep destinations disjoint across gateways.** Two `EgressGateway` resources with `createRoutes: true`, the same destination CIDR, and different `nextHop` values will fight over the same node route.
 - **The operator labels, but does not un-label.** If the egress node disappears, a new one is labeled automatically; a manually added second label is not removed.
@@ -240,9 +241,9 @@ Deeper rationale lives in the [Architecture Decision Records](docs/adr/).
 ## Roadmap
 
 - [x] **v0.1.0** — Core reconciliation (node labeling, IP pinning, routes, status), deployment manifests, GHCR image + `install.yaml` releases
-- [ ] **v0.2.0** — Helm chart, status `conditions` (KEP-1623 compliant), optional `CiliumEgressGatewayPolicy` generation, egress node de-labeling / conflict resolution
-- [ ] **v0.3.0** — Multiple independent egress nodes (per-gateway node labels), IPv6 support
-- [ ] **v0.4.0** — Prometheus metrics and alerting rules
+- [x] **v0.2.0** — Configurable egress node selector: per-gateway independent egress nodes
+- [ ] **v0.3.0** — Helm chart, status `conditions` (KEP-1623 compliant), optional `CiliumEgressGatewayPolicy` generation, egress node de-labeling / conflict resolution
+- [ ] **v0.4.0** — IPv6 support, Prometheus metrics and alerting rules
 - [ ] **v1.0.0** — Production-ready, stable `v1` API
 
 ## Contributing

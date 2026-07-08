@@ -15,6 +15,11 @@ spec:
   # control-plane (default) or worker. An existing egress-node label always
   # wins. Note: workloads on the egress node itself do not use the egress IP.
   nodeRole: control-plane
+  # Optional: override the labels identifying the egress node (default:
+  # egress-node: "true"). Keep in sync with your CiliumEgressGatewayPolicy
+  # nodeSelector. Gateways with different selectors get independent nodes.
+  # nodeSelector:
+  #   egress-zone: dmz
   # Pods selected here will use this egress gateway.
   podSelector:
     matchLabels:

@@ -409,12 +409,29 @@ func (r *EgressGatewayReconciler) buildDaemonSet(eg *egressv1alpha1.EgressGatewa
 							},
 						},
 					},
-					// Toleration so the DaemonSet also runs on control-plane nodes
+					// The pinner is node-critical network infrastructure: tolerate
+					// the taints commonly carried by control plane and etcd nodes
+					// (RKE2 server nodes combine control-plane:NoSchedule with
+					// etcd:NoExecute; hardened setups add CriticalAddonsOnly)
 					Tolerations: []corev1.Toleration{
 						{
 							Key:      "node-role.kubernetes.io/control-plane",
 							Operator: corev1.TolerationOpExists,
 							Effect:   corev1.TaintEffectNoSchedule,
+						},
+						{
+							Key:      labelControlPlaneLegacy,
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoSchedule,
+						},
+						{
+							Key:      "node-role.kubernetes.io/etcd",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoExecute,
+						},
+						{
+							Key:      "CriticalAddonsOnly",
+							Operator: corev1.TolerationOpExists,
 						},
 					},
 				},

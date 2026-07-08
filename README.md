@@ -263,6 +263,7 @@ Honest notes on current boundaries — most of these are tracked on the roadmap:
 - **Native routing / BGP only.** In tunnel mode (VXLAN/Geneve) Cilium's egress gateway is not supported by Cilium itself.
 - **BGP advertisement is your fabric's job.** The operator pins the IP; your Cilium BGP configuration must advertise it (or your fabric must route it to the node).
 - **Failover is disruptive by design.** When the egress node is replaced, the IP moves with the label; in-flight connections through the old node are reset.
+- **The pinner tolerates control-plane, etcd, and `CriticalAddonsOnly` taints by default.** It is node-critical network infrastructure and must be able to run on tainted RKE2 server nodes. Nodes with other custom taints need those taints tolerated too — a `spec.tolerations` passthrough is planned.
 - **The default pinner image needs a registry.** `alpine:3.19` installs iproute2 at startup when a registry is reachable; in air-gapped clusters, set `pinnerImage` to an internal image that ships iproute2 (busybox-only images fall back to a 60-second periodic check).
 
 Deeper rationale lives in the [Architecture Decision Records](docs/adr/).

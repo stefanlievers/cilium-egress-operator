@@ -144,6 +144,17 @@ var _ = Describe("EgressGateway Controller", func() {
 			Expect(script).To(ContainSubstring(`ensure_route "10.50.0.0/16" "192.0.2.1"`))
 			Expect(script).To(ContainSubstring(`ensure_route "10.60.0.0/16" ""`))
 
+			By("tolerating control-plane and etcd taints")
+			tolerationKeys := []string{}
+			for _, t := range ds.Spec.Template.Spec.Tolerations {
+				tolerationKeys = append(tolerationKeys, t.Key)
+			}
+			Expect(tolerationKeys).To(ContainElements(
+				"node-role.kubernetes.io/control-plane",
+				"node-role.kubernetes.io/etcd",
+				"CriticalAddonsOnly",
+			))
+
 			By("using a least-privilege security context")
 			Expect(container.SecurityContext.Privileged).To(BeNil())
 			Expect(container.SecurityContext.Capabilities.Add).To(ConsistOf(corev1.Capability("NET_ADMIN")))

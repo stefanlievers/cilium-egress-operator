@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.2.1] - 2026-07-08
+
+### Fixed
+- The IP pinner DaemonSet now tolerates `node-role.kubernetes.io/etcd:NoExecute`, the
+  legacy master taint, and `CriticalAddonsOnly` — on RKE2 server nodes (control-plane +
+  etcd combined) the pinner previously never scheduled, leaving the egress IP unset
+
 ## [0.2.0] - 2026-07-08
 
 ### Added
@@ -78,7 +85,8 @@ the controller image is published as
 ### Security
 - Upgraded `golang.org/x/net` to v0.56.0 (GO-2026-5026, GO-2026-4918)
 
-[Unreleased]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/stefanlievers/cilium-egress-operator/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/stefanlievers/cilium-egress-operator/releases/tag/v0.1.0

@@ -36,15 +36,44 @@ kind: EgressGateway
 metadata:
   name: egress-external
 spec:
+  # The IP that selected traffic leaves the cluster with; pinned as /32
+  # on the egress node's interface.
   egressIP: "10.255.26.10"
+
+  # Interface on the egress node to pin the IP to (default: eth0).
   interface: "eth0"
+
+  # Which kind of node to elect when no node matches the selector yet:
+  # control-plane (default) or worker.
+  nodeRole: worker
+
+  # Labels identifying the egress node (default: egress-node: "true").
+  # Applied to the elected node and used to schedule the IP pinner.
+  # Gateways with different selectors get independent egress nodes.
+  # Keep in sync with your CiliumEgressGatewayPolicy nodeSelector.
+  nodeSelector:
+    egress-zone: dmz
+
+  # Pods that use this egress gateway...
   podSelector:
     matchLabels:
       egress-pool: external
+  # ...optionally narrowed to namespaces matching this selector.
+  namespaceSelector:
+    matchLabels:
+      environment: production
+
+  # Destination CIDRs reached via the gateway. With createRoutes: true,
+  # one route per destination is maintained on the egress node.
   destinations:
     - cidr: "10.20.30.0/24"
       nextHop: "10.255.26.1"   # optional; defaults to the node's default gateway
+    - cidr: "192.168.40.0/22"  # no nextHop: routed via the node's default gateway
   createRoutes: true
+
+  # Optional: pinner image override for air-gapped clusters; the image
+  # should provide iproute2 for event-driven monitoring (default: alpine:3.19).
+  pinnerImage: "registry.internal.example/network/alpine-iproute2:3.19"
 ```
 
 The operator reconciles this into:
